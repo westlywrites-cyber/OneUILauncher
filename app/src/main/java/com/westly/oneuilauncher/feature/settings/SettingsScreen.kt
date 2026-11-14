@@ -47,11 +47,14 @@ import com.westly.oneuilauncher.data.LauncherSettings
 fun SettingsScreen(
     settings: LauncherSettings,
     overlayPermissionGranted: Boolean,
+    notificationAccess: Boolean,
     onChange: (LauncherSettings) -> Unit,
     onToggleOverlay: (Boolean) -> Unit,
     onGrantOverlayPermission: () -> Unit,
     onOpenWallpaper: () -> Unit,
     onOpenQuickSettings: () -> Unit,
+    onOpenAppInfo: () -> Unit,
+    onOpenNotificationAccess: () -> Unit,
     onResetLayout: () -> Unit,
     onClose: () -> Unit
 ) {
@@ -168,6 +171,32 @@ fun SettingsScreen(
                             title = "Permission needed",
                             subtitle = "Tap to allow \"Display over other apps\" for this launcher",
                             onClick = onGrantOverlayPermission
+                        )
+                    }
+                }
+
+                SectionTitle("Notifications")
+                SettingsCard {
+                    if (notificationAccess) {
+                        ActionRow(
+                            title = "Notification access: On",
+                            subtitle = "Notifications show in the Quick Settings panel, and their " +
+                                "app icons show in the status bar. Tap to manage.",
+                            onClick = onOpenNotificationAccess
+                        )
+                    } else {
+                        ActionRow(
+                            title = "Step 1: Allow restricted settings",
+                            subtitle = "Opens App info. Tap the three dots at the top right, then " +
+                                "\"Allow restricted settings\". Android needs this once because " +
+                                "this app was installed outside the Play Store.",
+                            onClick = onOpenAppInfo
+                        )
+                        Divider()
+                        ActionRow(
+                            title = "Step 2: Turn on notification access",
+                            subtitle = "Switch on this launcher in the list that opens.",
+                            onClick = onOpenNotificationAccess
                         )
                     }
                 }

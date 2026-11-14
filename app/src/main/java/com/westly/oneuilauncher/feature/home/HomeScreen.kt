@@ -86,6 +86,7 @@ import com.westly.oneuilauncher.feature.widgets.CalendarWidget
 import com.westly.oneuilauncher.feature.widgets.ClockWidget
 import com.westly.oneuilauncher.feature.widgets.GoogleSearchWidget
 import com.westly.oneuilauncher.feature.widgets.WeatherWidget
+import com.westly.oneuilauncher.notifications.NotificationAccess
 import com.westly.oneuilauncher.overlay.OverlayController
 import com.westly.oneuilauncher.qs.QuickSettingsActivity
 import kotlinx.coroutines.Dispatchers
@@ -231,7 +232,12 @@ fun HomeScreen(resumeTick: Int, homeTick: Int) {
     val columns = settings.columns
     var settingsOpen by remember { mutableStateOf(false) }
     var overlayGranted by remember { mutableStateOf(OverlayController.canDraw(context)) }
-    LaunchedEffect(resumeTick) { overlayGranted = OverlayController.canDraw(context) }
+    var notificationAccess by remember { mutableStateOf(NotificationAccess.has(context)) }
+    LaunchedEffect(resumeTick) {
+        overlayGranted = OverlayController.canDraw(context)
+        notificationAccess = NotificationAccess.has(context)
+        NotificationAccess.ensureConnected(context)
+    }
 
     fun updateSettings(new: LauncherSettings) {
         settings = new
@@ -631,6 +637,7 @@ fun HomeScreen(resumeTick: Int, homeTick: Int) {
             SettingsScreen(
                 settings = settings,
                 overlayPermissionGranted = overlayGranted,
+                notificationAccess = notificationAccess,
                 onChange = { updateSettings(it) },
                 onToggleOverlay = { on ->
                     updateSettings(settings.copy(statusBarOverlay = on))
@@ -638,6 +645,8 @@ fun HomeScreen(resumeTick: Int, homeTick: Int) {
                 },
                 onGrantOverlayPermission = { OverlayController.openPermissionScreen(context) },
                 onOpenWallpaper = { pickerOpen = true },
+                onOpenAppInfo = { AppActions.openAppInfo(context, context.packageName) },
+                onOpenNotificationAccess = { NotificationAccess.openSettings(context) },
                 onOpenQuickSettings = {
                     context.startActivity(Intent(context, QuickSettingsActivity::class.java))
                 },

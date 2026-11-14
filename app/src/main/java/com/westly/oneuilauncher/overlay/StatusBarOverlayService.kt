@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ServiceInfo
+import android.graphics.Bitmap
 import android.graphics.PixelFormat
 import android.net.ConnectivityManager
 import android.net.Network
@@ -24,6 +25,8 @@ import android.view.View
 import android.view.ViewConfiguration
 import android.view.WindowManager
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.drawable.toBitmap
+import com.westly.oneuilauncher.notifications.NotificationRepository
 import com.westly.oneuilauncher.qs.QuickSettingsActivity
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -38,6 +41,9 @@ class StatusBarOverlayService : Service() {
     private var windowManager: WindowManager? = null
     private var barView: StatusBarView? = null
     private var touchZone: View? = null
+    private var zoneParams: WindowManager.LayoutParams? = null
+    private val iconCache = HashMap<String, Bitmap>()
+    private val notificationListener: () -> Unit = { refreshNotificationUi() }
     private var connectivity: ConnectivityManager? = null
 
     private val tickReceiver = object : BroadcastReceiver() {
@@ -140,6 +146,10 @@ class StatusBarOverlayService : Service() {
 
         addTouchZone(manager)
 
+        // Notification icons in the bar, and the swipe zone width, follow the notifications.
+        NotificationRepository.addListener(notificationListener)
+        refreshNotificationUi()
+
         // Time changes.
         val timeFilter = IntentFilter().apply {
             addAction(Intent.ACTION_TIME_TICK)
@@ -169,6 +179,7 @@ class StatusBarOverlayService : Service() {
     }
 
     private fun removeBar() {
+        NotificationRepository.removeListener(notificationListener)
         try { unregisterReceiver(tickReceiver) } catch (_: Exception) { }
         try { unregisterReceiver(batteryReceiver) } catch (_: Exception) { }
         try { connectivity?.unregisterNetworkCallback(networkCallback) } catch (_: Exception) { }
@@ -181,6 +192,7 @@ class StatusBarOverlayService : Service() {
             try { windowManager?.removeView(zone) } catch (_: Exception) { }
         }
         touchZone = null
+        zoneParams = null
     }
 
     /**
@@ -214,7 +226,7 @@ class StatusBarOverlayService : Service() {
         })
 
         val params = WindowManager.LayoutParams(
-            resources.displayMetrics.widthPixels / 2,
+            zoneWidth(),
             statusBarHeight(),
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
@@ -233,8 +245,51 @@ class StatusBarOverlayService : Service() {
         try {
             manager.addView(zone, params)
             touchZone = zone
+            zoneParams = params
         } catch (_: Exception) {
             // Without the touch zone the bar still works; only the swipe is missing.
+        }
+    }
+
+    /**
+     * Without notification access only the right half of the bar opens the launcher panel
+     * (the left half keeps opening Android's own shade). With access, the whole bar does.
+     */
+    private fun zoneWidth(): Int =
+        if (NotificationRepository.connected) {
+            WindowManager.LayoutParams.MATCH_PARENT
+        } else {
+            resources.displayMetrics.widthPixels / 2
+        }
+
+    private fun refreshNotificationUi() {
+        // Icons of the apps that have notifications.
+        val packages = NotificationRepository.items.map { it.packageName }.distinct()
+        val shown = packages.take(MAX_ICONS)
+        val sizePx = (16 * resources.displayMetrics.density).toInt()
+        val icons = shown.mapNotNull { pkg ->
+            iconCache[pkg] ?: try {
+                packageManager.getApplicationIcon(pkg)
+                    .toBitmap(width = sizePx, height = sizePx)
+                    .also { iconCache[pkg] = it }
+            } catch (_: Exception) {
+                null
+            }
+        }
+        barView?.notificationIcons = icons
+        barView?.extraNotifications = packages.size - shown.size
+
+        // Swipe zone width.
+        val zone = touchZone
+        val params = zoneParams
+        val width = zoneWidth()
+        if (zone != null && params != null && params.width != width) {
+            params.width = width
+            try {
+                windowManager?.updateViewLayout(zone, params)
+            } catch (_: Exception) {
+                // The window is already gone.
+            }
         }
     }
 
@@ -277,5 +332,6 @@ class StatusBarOverlayService : Service() {
     private companion object {
         const val CHANNEL_ID = "status_bar_overlay"
         const val NOTIFICATION_ID = 6001
+        const val MAX_ICONS = 4
     }
 }

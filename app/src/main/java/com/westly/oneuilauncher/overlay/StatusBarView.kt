@@ -1,6 +1,7 @@
 package com.westly.oneuilauncher.overlay
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -23,6 +24,12 @@ class StatusBarView(context: Context) : View(context) {
     var charging: Boolean = false
         set(value) { field = value; invalidate() }
     var network: Network = Network.NONE
+        set(value) { field = value; invalidate() }
+
+    /** App icons of active notifications, drawn after the time. */
+    var notificationIcons: List<Bitmap> = emptyList()
+        set(value) { field = value; invalidate() }
+    var extraNotifications: Int = 0
         set(value) { field = value; invalidate() }
 
     private val density = resources.displayMetrics.density
@@ -48,6 +55,8 @@ class StatusBarView(context: Context) : View(context) {
         style = Paint.Style.FILL
     }
     private val rect = RectF()
+    private val iconRect = RectF()
+    private val bitmapPaint = Paint(Paint.FILTER_BITMAP_FLAG)
     private val bolt = Path()
 
     private fun dp(value: Float) = value * density
@@ -63,6 +72,19 @@ class StatusBarView(context: Context) : View(context) {
         // Time, left.
         val timeBaseline = centerY - (textPaint.ascent() + textPaint.descent()) / 2f
         canvas.drawText(timeText, pad, timeBaseline, textPaint)
+
+        // Notification icons, right after the time.
+        var iconX = pad + textPaint.measureText(timeText) + dp(10f)
+        val iconSize = dp(16f)
+        for (bitmap in notificationIcons) {
+            iconRect.set(iconX, centerY - iconSize / 2f, iconX + iconSize, centerY + iconSize / 2f)
+            canvas.drawBitmap(bitmap, null, iconRect, bitmapPaint)
+            iconX += iconSize + dp(6f)
+        }
+        if (extraNotifications > 0) {
+            val extraBaseline = centerY - (percentPaint.ascent() + percentPaint.descent()) / 2f
+            canvas.drawText("+$extraNotifications", iconX, extraBaseline, percentPaint)
+        }
 
         // Right side, drawn from the right edge towards the middle.
         var x = w - pad

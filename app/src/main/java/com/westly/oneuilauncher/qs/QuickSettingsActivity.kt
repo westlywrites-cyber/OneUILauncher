@@ -23,17 +23,21 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
@@ -59,6 +63,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.westly.oneuilauncher.notifications.NotificationAccess
+import com.westly.oneuilauncher.notifications.NotificationRepository
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -223,13 +229,18 @@ private fun QuickSettingsPanel(refreshTick: Int, onFinish: () -> Unit) {
     var dragSum by remember { mutableFloatStateOf(0f) }
     val dragState = rememberDraggableState { delta -> dragSum += delta }
 
-    Box(
+    val hasAccess = remember(refreshTick) { NotificationAccess.has(context) }
+    val notifications = NotificationRepository.items
+
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black.copy(alpha = dimAlpha))
             .pointerInput(Unit) { detectTapGestures { close() } },
         contentAlignment = Alignment.TopCenter
     ) {
+        val maxPanelHeight = maxHeight * 0.92f
+
         AnimatedVisibility(
             visible = visible,
             enter = slideInVertically(tween(240)) { -it } + fadeIn(tween(240)),
@@ -238,53 +249,83 @@ private fun QuickSettingsPanel(refreshTick: Int, onFinish: () -> Unit) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .heightIn(max = maxPanelHeight)
                     .clip(RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp))
                     .background(
                         Brush.verticalGradient(listOf(Color(0xFA0B0F4A), Color(0xFA070A33)))
                     )
                     // Taps on the panel itself must not close it.
                     .pointerInput(Unit) { detectTapGestures { } }
-                    .draggable(
-                        orientation = Orientation.Vertical,
-                        state = dragState,
-                        onDragStarted = { dragSum = 0f },
-                        onDragStopped = { if (dragSum < -60f) close() }
-                    )
                     .statusBarsPadding()
-                    .padding(horizontal = 20.dp, vertical = 16.dp)
+                    .padding(top = 16.dp)
             ) {
-                PanelHeader(refreshTick)
-                Spacer(modifier = Modifier.height(20.dp))
+                // Everything scrolls, so a long list of notifications still fits.
+                Column(
+                    modifier = Modifier
+                        .weight(1f, fill = false)
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 20.dp)
+                ) {
+                    PanelHeader(refreshTick)
+                    Spacer(modifier = Modifier.height(20.dp))
 
-                BrightnessRow(refreshTick = refreshTick, onNeedPermission = {
-                    QuickControls.openWriteSettingsPermission(context)
-                    close()
-                })
-                Spacer(modifier = Modifier.height(8.dp))
-                VolumeRow(refreshTick)
-                Spacer(modifier = Modifier.height(20.dp))
+                    BrightnessRow(refreshTick = refreshTick, onNeedPermission = {
+                        QuickControls.openWriteSettingsPermission(context)
+                        close()
+                    })
+                    Spacer(modifier = Modifier.height(8.dp))
+                    VolumeRow(refreshTick)
+                    Spacer(modifier = Modifier.height(20.dp))
 
-                tiles.chunked(4).forEach { rowTiles ->
-                    Row(modifier = Modifier.fillMaxWidth()) {
-                        rowTiles.forEach { tile ->
-                            TileView(tile = tile, modifier = Modifier.weight(1f))
+                    tiles.chunked(4).forEach { rowTiles ->
+                        Row(modifier = Modifier.fillMaxWidth()) {
+                            rowTiles.forEach { tile ->
+                                TileView(tile = tile, modifier = Modifier.weight(1f))
+                            }
+                            repeat(4 - rowTiles.size) {
+                                Spacer(modifier = Modifier.weight(1f))
+                            }
                         }
-                        repeat(4 - rowTiles.size) {
-                            Spacer(modifier = Modifier.weight(1f))
-                        }
+                        Spacer(modifier = Modifier.height(14.dp))
                     }
-                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    NotificationSection(
+                        hasAccess = hasAccess,
+                        items = notifications,
+                        onOpen = { item ->
+                            if (NotificationRepository.open(context, item)) close()
+                        },
+                        onDismiss = { item -> NotificationRepository.dismiss(item.key) },
+                        onClearAll = { NotificationRepository.clearAll() },
+                        onTurnOnAccess = {
+                            NotificationAccess.openSettings(context)
+                            close()
+                        }
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
                 }
 
-                // Little handle that hints "swipe up to close".
+                // Handle: drag it up to close the panel.
                 Box(
                     modifier = Modifier
-                        .align(Alignment.CenterHorizontally)
-                        .padding(top = 4.dp, bottom = 4.dp)
-                        .size(width = 44.dp, height = 5.dp)
-                        .clip(CircleShape)
-                        .background(Color.White.copy(alpha = 0.35f))
-                )
+                        .fillMaxWidth()
+                        .height(36.dp)
+                        .draggable(
+                            orientation = Orientation.Vertical,
+                            state = dragState,
+                            onDragStarted = { dragSum = 0f },
+                            onDragStopped = { if (dragSum < -40f) close() }
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(width = 44.dp, height = 5.dp)
+                            .clip(CircleShape)
+                            .background(Color.White.copy(alpha = 0.35f))
+                    )
+                }
             }
         }
     }
