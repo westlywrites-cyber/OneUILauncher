@@ -13,6 +13,9 @@ val LocalShowLabels = compositionLocalOf { true }
 /** Icons per row in the app drawer. */
 val LocalGridColumns = compositionLocalOf { 4 }
 
+/** Notifications per app (package name to count), used for the dots on icons. */
+val LocalBadgeCounts = compositionLocalOf<Map<String, Int>> { emptyMap() }
+
 /** Converts the saved icon size choice (0, 1, 2) to dp. */
 fun iconSizeFor(choice: Int): Dp = when (choice) {
     0 -> 48.dp

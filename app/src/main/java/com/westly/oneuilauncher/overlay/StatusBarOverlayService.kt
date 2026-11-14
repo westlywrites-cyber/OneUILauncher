@@ -2,6 +2,7 @@ package com.westly.oneuilauncher.overlay
 
 import android.app.Notification
 import android.app.NotificationChannel
+import android.app.KeyguardManager
 import android.app.NotificationManager
 import android.app.Service
 import android.content.BroadcastReceiver
@@ -14,6 +15,7 @@ import android.graphics.PixelFormat
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
+import android.media.AudioManager
 import android.os.BatteryManager
 import android.os.Build
 import android.os.IBinder
@@ -26,6 +28,8 @@ import android.view.ViewConfiguration
 import android.view.WindowManager
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.toBitmap
+import com.westly.oneuilauncher.data.SettingsStore
+import com.westly.oneuilauncher.lock.LockScreenActivity
 import com.westly.oneuilauncher.notifications.NotificationRepository
 import com.westly.oneuilauncher.qs.QuickSettingsActivity
 import java.text.SimpleDateFormat
@@ -77,7 +81,22 @@ class StatusBarOverlayService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startAsForeground()
-        if (barView == null && !showBar()) {
+        val settings = SettingsStore.load(this)
+
+        // Status bar overlay.
+        if (settings.statusBarOverlay) {
+            if (barView == null && !showBar() && !settings.lockScreen) {
+                stopSelf()
+                return START_NOT_STICKY
+            }
+        } else if (barView != null) {
+            removeBar()
+        }
+
+        // Lock screen trigger.
+        if (settings.lockScreen) registerScreenReceiver() else unregisterScreenReceiver()
+
+        if (!settings.statusBarOverlay && !settings.lockScreen) {
             stopSelf()
             return START_NOT_STICKY
         }
@@ -85,8 +104,58 @@ class StatusBarOverlayService : Service() {
     }
 
     override fun onDestroy() {
+        unregisterScreenReceiver()
         removeBar()
         super.onDestroy()
+    }
+
+    // ---- Lock screen: show it whenever the display turns on while Android is locked ----
+
+    private var screenReceiverRegistered = false
+
+    private val screenReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            showLockScreen()
+        }
+    }
+
+    private fun registerScreenReceiver() {
+        if (screenReceiverRegistered) return
+        ContextCompat.registerReceiver(
+            this,
+            screenReceiver,
+            IntentFilter(Intent.ACTION_SCREEN_ON),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+        screenReceiverRegistered = true
+    }
+
+    private fun unregisterScreenReceiver() {
+        if (!screenReceiverRegistered) return
+        try {
+            unregisterReceiver(screenReceiver)
+        } catch (_: Exception) {
+            // Already gone.
+        }
+        screenReceiverRegistered = false
+    }
+
+    private fun showLockScreen() {
+        val keyguard = getSystemService(KeyguardManager::class.java)
+        if (!keyguard.isKeyguardLocked) return
+
+        // Leave incoming calls and calls in progress alone.
+        val audio = getSystemService(AudioManager::class.java)
+        if (audio.mode != AudioManager.MODE_NORMAL) return
+
+        try {
+            startActivity(
+                Intent(this, LockScreenActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
+            )
+        } catch (_: Exception) {
+            // Android refused to open it from the background.
+        }
     }
 
     private fun startAsForeground() {
@@ -94,12 +163,12 @@ class StatusBarOverlayService : Service() {
         manager.createNotificationChannel(
             NotificationChannel(
                 CHANNEL_ID,
-                "Status bar overlay",
+                "Launcher services",
                 NotificationManager.IMPORTANCE_MIN
             )
         )
         val notification = Notification.Builder(this, CHANNEL_ID)
-            .setContentTitle("Status bar overlay is on")
+            .setContentTitle("Launcher services are on")
             .setContentText("Turn it off in Launcher settings")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setOngoing(true)

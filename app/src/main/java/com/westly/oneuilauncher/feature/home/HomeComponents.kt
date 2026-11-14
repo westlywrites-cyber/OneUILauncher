@@ -132,6 +132,7 @@ fun AppIconItem(
     val density = LocalDensity.current
     val iconSize = LocalIconSize.current
     val labelsOn = LocalShowLabels.current
+    val badgeCount = LocalBadgeCounts.current[app.packageName] ?: 0
     val sizePx = with(density) { iconSize.roundToPx() }
 
     val bitmap by produceState<ImageBitmap?>(initialValue = null, key1 = app.key) {
@@ -175,16 +176,27 @@ fun AppIconItem(
             ),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Box(
-            modifier = Modifier
-                .size(iconSize)
-                .clip(RoundedCornerShape(iconSize * 0.31f))
-        ) {
-            bitmap?.let {
-                Image(
-                    bitmap = it,
-                    contentDescription = app.label,
-                    modifier = Modifier.size(iconSize)
+        Box(modifier = Modifier.size(iconSize)) {
+            Box(
+                modifier = Modifier
+                    .size(iconSize)
+                    .clip(RoundedCornerShape(iconSize * 0.31f))
+            ) {
+                bitmap?.let {
+                    Image(
+                        bitmap = it,
+                        contentDescription = app.label,
+                        modifier = Modifier.size(iconSize)
+                    )
+                }
+            }
+            if (badgeCount > 0) {
+                // Red dot: this app has notifications.
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .size(13.dp)
+                        .background(Color(0xFFFF3B30), CircleShape)
                 )
             }
         }

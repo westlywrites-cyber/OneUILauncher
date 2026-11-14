@@ -76,10 +76,14 @@ import com.westly.oneuilauncher.data.HomeItem
 import com.westly.oneuilauncher.data.HomeItems
 import com.westly.oneuilauncher.data.LauncherSettings
 import com.westly.oneuilauncher.data.LayoutStore
+import com.westly.oneuilauncher.data.RecentApps
 import com.westly.oneuilauncher.data.SettingsStore
 import com.westly.oneuilauncher.data.WallpaperStore
 import com.westly.oneuilauncher.feature.drawer.AppDrawer
+import com.westly.oneuilauncher.feature.recents.RecentsScreen
 import com.westly.oneuilauncher.feature.settings.SettingsScreen
+import com.westly.oneuilauncher.lock.LockScreenActivity
+import com.westly.oneuilauncher.notifications.NotificationRepository
 import com.westly.oneuilauncher.feature.wallpaper.LauncherWallpaper
 import com.westly.oneuilauncher.feature.wallpaper.WallpaperPicker
 import com.westly.oneuilauncher.feature.widgets.CalendarWidget
@@ -231,11 +235,15 @@ fun HomeScreen(resumeTick: Int, homeTick: Int) {
     var settings by remember { mutableStateOf(SettingsStore.load(context)) }
     val columns = settings.columns
     var settingsOpen by remember { mutableStateOf(false) }
+    var recentsOpen by remember { mutableStateOf(false) }
+    var recentsRefresh by remember { mutableIntStateOf(0) }
+    var usageAccess by remember { mutableStateOf(RecentApps.hasAccess(context)) }
     var overlayGranted by remember { mutableStateOf(OverlayController.canDraw(context)) }
     var notificationAccess by remember { mutableStateOf(NotificationAccess.has(context)) }
     LaunchedEffect(resumeTick) {
         overlayGranted = OverlayController.canDraw(context)
         notificationAccess = NotificationAccess.has(context)
+        usageAccess = RecentApps.hasAccess(context)
         NotificationAccess.ensureConnected(context)
     }
 
@@ -245,8 +253,9 @@ fun HomeScreen(resumeTick: Int, homeTick: Int) {
     }
 
     // ---- Status bar overlay (Phase 6): on only when wanted AND allowed ----
-    LaunchedEffect(settings.statusBarOverlay, overlayGranted, resumeTick) {
-        if (settings.statusBarOverlay && overlayGranted) {
+    // The same service also shows the lock screen (Phase 9), so it runs for either feature.
+    LaunchedEffect(settings.statusBarOverlay, settings.lockScreen, overlayGranted, resumeTick) {
+        if ((settings.statusBarOverlay || settings.lockScreen) && overlayGranted) {
             OverlayController.start(context)
         } else {
             OverlayController.stop(context)
@@ -359,6 +368,7 @@ fun HomeScreen(resumeTick: Int, homeTick: Int) {
         return when {
             menu != null -> { menu = null; true }
             pickerOpen -> { pickerOpen = false; true }
+            recentsOpen -> { recentsOpen = false; true }
             settingsOpen -> { settingsOpen = false; true }
             folderOpen -> { folderOpen = false; true }
             drawerProgress > 0f -> { settleDrawer(0f); true }
@@ -499,9 +509,17 @@ fun HomeScreen(resumeTick: Int, homeTick: Int) {
 
     val draggableState = rememberDraggableState { dy -> dragDrawer(dy) }
 
+    // Notification counts per app, for the dots on icons.
+    val badgeCounts = if (settings.showBadges) {
+        NotificationRepository.items.groupingBy { it.packageName }.eachCount()
+    } else {
+        emptyMap()
+    }
+
     CompositionLocalProvider(
         LocalIconSize provides iconSizeFor(settings.iconSize),
         LocalShowLabels provides settings.showLabels,
+        LocalBadgeCounts provides badgeCounts,
         LocalGridColumns provides settings.columns
     ) {
     Box(
@@ -654,7 +672,37 @@ fun HomeScreen(resumeTick: Int, homeTick: Int) {
                     LayoutStore.clear(context)
                     savedOrder = emptyList()
                 },
+                onToggleLockScreen = { on ->
+                    updateSettings(settings.copy(lockScreen = on))
+                    if (on && !overlayGranted) OverlayController.openPermissionScreen(context)
+                },
+                onPreviewLockScreen = {
+                    context.startActivity(Intent(context, LockScreenActivity::class.java))
+                },
+                onOpenRecents = {
+                    recentsRefresh += 1
+                    recentsOpen = true
+                },
                 onClose = { settingsOpen = false }
+            )
+        }
+
+        // Recent apps (Phase 10).
+        AnimatedVisibility(
+            visible = recentsOpen,
+            enter = fadeIn(tween(180)) + scaleIn(initialScale = 0.96f, animationSpec = tween(220)),
+            exit = fadeOut(tween(150)) + scaleOut(targetScale = 0.96f, animationSpec = tween(150))
+        ) {
+            RecentsScreen(
+                apps = apps,
+                hasAccess = usageAccess,
+                refreshKey = recentsRefresh,
+                onGrantAccess = { RecentApps.openAccessSettings(context) },
+                onLaunch = { app ->
+                    AppRepository.launch(context, app)
+                    recentsOpen = false
+                },
+                onClose = { recentsOpen = false }
             )
         }
 
@@ -693,6 +741,10 @@ fun HomeScreen(resumeTick: Int, homeTick: Int) {
                 anchor = state.anchor,
                 entries = listOf(
                     MenuEntry("Wallpaper") { pickerOpen = true },
+                    MenuEntry("Recent apps") {
+                        recentsRefresh += 1
+                        recentsOpen = true
+                    },
                     MenuEntry("Launcher settings") { settingsOpen = true },
                     MenuEntry("Reset home layout") {
                         LayoutStore.clear(context)

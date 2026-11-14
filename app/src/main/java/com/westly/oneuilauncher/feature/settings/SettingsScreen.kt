@@ -55,6 +55,9 @@ fun SettingsScreen(
     onOpenQuickSettings: () -> Unit,
     onOpenAppInfo: () -> Unit,
     onOpenNotificationAccess: () -> Unit,
+    onToggleLockScreen: (Boolean) -> Unit,
+    onPreviewLockScreen: () -> Unit,
+    onOpenRecents: () -> Unit,
     onResetLayout: () -> Unit,
     onClose: () -> Unit
 ) {
@@ -138,6 +141,13 @@ fun SettingsScreen(
                         checked = settings.showLabels,
                         onChange = { onChange(settings.copy(showLabels = it)) }
                     )
+                    Divider()
+                    SwitchRow(
+                        title = "Notification dots",
+                        subtitle = "Red dot on apps that have notifications (needs notification access)",
+                        checked = settings.showBadges,
+                        onChange = { onChange(settings.copy(showBadges = it)) }
+                    )
                 }
 
                 SectionTitle("Look")
@@ -199,6 +209,42 @@ fun SettingsScreen(
                             onClick = onOpenNotificationAccess
                         )
                     }
+                }
+
+                SectionTitle("Lock screen")
+                SettingsCard {
+                    SwitchRow(
+                        title = "Launcher lock screen",
+                        subtitle = "Shows the launcher's own lock screen over Android's when the " +
+                            "display turns on. You still unlock with your PIN, pattern or " +
+                            "fingerprint. It shows notification icons and a count, never their text.",
+                        checked = settings.lockScreen,
+                        onChange = onToggleLockScreen
+                    )
+                    if (settings.lockScreen && !overlayPermissionGranted) {
+                        Divider()
+                        ActionRow(
+                            title = "Permission needed",
+                            subtitle = "Tap to allow \"Display over other apps\" for this launcher",
+                            onClick = onGrantOverlayPermission
+                        )
+                    }
+                    Divider()
+                    ActionRow(
+                        title = "Preview lock screen",
+                        subtitle = "Opens it now so you can try it",
+                        onClick = onPreviewLockScreen
+                    )
+                }
+
+                SectionTitle("Multitasking")
+                SettingsCard {
+                    ActionRow(
+                        title = "Recent apps",
+                        subtitle = "The launcher's own screen of recently used apps. " +
+                            "Android does not let a launcher replace the system Recents button.",
+                        onClick = onOpenRecents
+                    )
                 }
 
                 SectionTitle("Quick Settings")
