@@ -39,6 +39,7 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -77,7 +78,8 @@ fun AppDrawer(
     onLaunch: (AppInfo) -> Unit,
     onDrag: (Float) -> Float,
     onRelease: (Float) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onAppLongClick: (AppInfo, Rect) -> Unit = { _, _ -> }
 ) {
     val keyboard = LocalSoftwareKeyboardController.current
     DisposableEffect(Unit) {
@@ -187,6 +189,7 @@ fun AppDrawer(
                         ) {
                             AppIconItem(
                                 app = app,
+                                onLongClick = { rect -> onAppLongClick(app, rect) },
                                 onClick = { onLaunch(app) }
                             )
                         }

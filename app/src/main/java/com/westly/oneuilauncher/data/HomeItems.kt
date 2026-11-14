@@ -61,4 +61,22 @@ object HomeItems {
         loose.forEach { items.add(HomeItem.App(it)) }
         return items
     }
+
+    /**
+     * Puts items in the order the user saved by dragging. Items not in the saved order
+     * (new apps) keep their normal position after the ones that are.
+     */
+    fun applyOrder(items: List<HomeItem>, savedOrder: List<String>): List<HomeItem> {
+        if (savedOrder.isEmpty()) return items
+        val position = HashMap<String, Int>()
+        savedOrder.forEachIndexed { index, id -> position[id] = index }
+        return items.withIndex()
+            .sortedWith(
+                compareBy<IndexedValue<HomeItem>>(
+                    { position[it.value.id] ?: Int.MAX_VALUE },
+                    { it.index }
+                )
+            )
+            .map { it.value }
+    }
 }

@@ -6,7 +6,8 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -22,12 +23,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -35,6 +39,8 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
@@ -106,14 +112,24 @@ fun HomeWallpaper(modifier: Modifier = Modifier) {
     }
 }
 
-/** One app icon with its name underneath. */
+/**
+ * One app icon with its name underneath.
+ *
+ * @param onLongClick called on long press with the icon's position on screen (used for the menu).
+ * @param interactive false for icons whose taps and long presses are handled by a parent
+ * (the home grid, which also needs drag to rearrange).
+ */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun AppIconItem(
     app: AppInfo,
     modifier: Modifier = Modifier,
     showLabel: Boolean = true,
-    onClick: () -> Unit
+    interactive: Boolean = true,
+    onLongClick: ((Rect) -> Unit)? = null,
+    onClick: () -> Unit = {}
 ) {
+    var bounds by remember { mutableStateOf(Rect.Zero) }
     val context = LocalContext.current
     val density = LocalDensity.current
     val sizePx = with(density) { IconSize.roundToPx() }
@@ -144,10 +160,18 @@ fun AppIconItem(
                 scaleX = scale
                 scaleY = scale
             }
-            .clickable(
-                interactionSource = interaction,
-                indication = null,
-                onClick = onClick
+            .onGloballyPositioned { bounds = it.boundsInRoot() }
+            .then(
+                if (interactive) {
+                    Modifier.combinedClickable(
+                        interactionSource = interaction,
+                        indication = null,
+                        onClick = onClick,
+                        onLongClick = onLongClick?.let { handler -> { handler(bounds) } }
+                    )
+                } else {
+                    Modifier
+                }
             ),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -192,7 +216,8 @@ fun AppIconItem(
 fun Dock(
     apps: List<AppInfo>,
     onLaunch: (AppInfo) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onAppLongClick: (AppInfo, Rect) -> Unit = { _, _ -> }
 ) {
     Row(
         modifier = modifier
@@ -210,6 +235,7 @@ fun Dock(
                     AppIconItem(
                         app = app,
                         showLabel = false,
+                        onLongClick = { rect -> onAppLongClick(app, rect) },
                         onClick = { onLaunch(app) }
                     )
                 }

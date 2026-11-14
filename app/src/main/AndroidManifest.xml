@@ -4,6 +4,9 @@
     <!-- Needed by the weather widget (Open-Meteo) -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Needed for the "Uninstall" option in the long-press menu -->
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
+
     <!-- Android 11+ package visibility: lets the launcher see installed apps -->
     <queries>
         <intent>

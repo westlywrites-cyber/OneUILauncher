@@ -4,6 +4,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -89,7 +90,8 @@ private fun MiniAppIcon(app: AppInfo, size: Dp) {
 fun FolderIconItem(
     folder: HomeItem.Folder,
     modifier: Modifier = Modifier,
-    onClick: () -> Unit
+    interactive: Boolean = true,
+    onClick: () -> Unit = {}
 ) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
@@ -105,10 +107,16 @@ fun FolderIconItem(
                 scaleX = scale
                 scaleY = scale
             }
-            .clickable(
-                interactionSource = interaction,
-                indication = null,
-                onClick = onClick
+            .then(
+                if (interactive) {
+                    Modifier.clickable(
+                        interactionSource = interaction,
+                        indication = null,
+                        onClick = onClick
+                    )
+                } else {
+                    Modifier
+                }
             ),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -162,7 +170,8 @@ fun FolderIconItem(
 fun FolderPopup(
     folder: HomeItem.Folder,
     onLaunch: (AppInfo) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onAppLongClick: (AppInfo, Rect) -> Unit = { _, _ -> }
 ) {
     Box(
         modifier = Modifier
@@ -196,7 +205,11 @@ fun FolderPopup(
                         modifier = Modifier.fillMaxWidth(),
                         contentAlignment = Alignment.Center
                     ) {
-                        AppIconItem(app = app, onClick = { onLaunch(app) })
+                        AppIconItem(
+                            app = app,
+                            onLongClick = { rect -> onAppLongClick(app, rect) },
+                            onClick = { onLaunch(app) }
+                        )
                     }
                 }
             }
