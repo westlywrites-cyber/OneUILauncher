@@ -1,18 +1,27 @@
 package com.westly.oneuilauncher.feature.home
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -36,17 +45,33 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.westly.oneuilauncher.data.AppInfo
 import com.westly.oneuilauncher.data.AppRepository
+import com.westly.oneuilauncher.data.HomeItem
+import com.westly.oneuilauncher.data.HomeItems
 import com.westly.oneuilauncher.feature.drawer.AppDrawer
+import com.westly.oneuilauncher.feature.widgets.CalendarWidget
+import com.westly.oneuilauncher.feature.widgets.ClockWidget
+import com.westly.oneuilauncher.feature.widgets.GoogleSearchWidget
+import com.westly.oneuilauncher.feature.widgets.WeatherWidget
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlin.math.ceil
-import kotlin.math.max
 
 const val COLUMNS = 4
 const val ROWS = 5
 const val DOCK_SLOTS = 4
+
+/** Page 1 and page 2 always exist, because they hold the widgets. */
+private const val MIN_PAGES = 2
+
+/** How many grid rows the widgets use up on each page. */
+private fun widgetRowsFor(page: Int): Int = when (page) {
+    0 -> 1 // weather + Google search
+    1 -> 2 // clock + calendar
+    else -> 0
+}
+
+private fun capacityFor(page: Int): Int = COLUMNS * (ROWS - widgetRowsFor(page))
 
 /** Keeps the running drawer animation so it can be cancelled when a finger touches the screen. */
 private class JobHolder {
@@ -54,8 +79,8 @@ private class JobHolder {
 }
 
 /**
- * Home screen: wallpaper, swipeable pages of apps, dock and page dots,
- * plus the app drawer that slides up when you swipe up.
+ * Home screen: wallpaper, swipeable pages with widgets, apps and folders, dock, page dots,
+ * and the app drawer that slides up when you swipe up.
  *
  * @param resumeTick changes every time the launcher comes to the front, so the app list refreshes.
  * @param homeTick changes when Home is pressed while the launcher is already open.
@@ -71,13 +96,26 @@ fun HomeScreen(resumeTick: Int, homeTick: Int) {
     }
 
     val dock = remember(apps) { AppRepository.resolveDock(context, apps) }
-    val pageApps = remember(apps, dock) {
-        apps.filter { app -> dock.none { it.key == app.key } }
+    val homeItems = remember(apps, dock) {
+        HomeItems.build(apps.filter { app -> dock.none { it.key == app.key } })
     }
 
-    val perPage = COLUMNS * ROWS
-    val pageCount = max(1, ceil(pageApps.size / perPage.toDouble()).toInt())
-    val pagerState = rememberPagerState(pageCount = { pageCount })
+    // Split the items over pages. Pages with widgets hold fewer rows of apps.
+    val pages = remember(homeItems) {
+        val result = mutableListOf<List<HomeItem>>()
+        var index = 0
+        while (index < homeItems.size || result.size < MIN_PAGES) {
+            val capacity = capacityFor(result.size)
+            result.add(homeItems.drop(index).take(capacity))
+            index += capacity
+        }
+        result.toList()
+    }
+    val pagerState = rememberPagerState(pageCount = { pages.size })
+
+    // ---- Folder popup state ----
+    var folderShown by remember { mutableStateOf<HomeItem.Folder?>(null) }
+    var folderOpen by remember { mutableStateOf(false) }
 
     // ---- App drawer state: 0 = closed, 1 = fully open ----
     var drawerProgress by remember { mutableFloatStateOf(0f) }
@@ -122,7 +160,9 @@ fun HomeScreen(resumeTick: Int, homeTick: Int) {
 
     LaunchedEffect(homeTick) {
         if (homeTick > 0) {
-            if (drawerProgress > 0f) {
+            if (folderOpen) {
+                folderOpen = false
+            } else if (drawerProgress > 0f) {
                 settleDrawer(0f)
             } else {
                 pagerState.animateScrollToPage(0)
@@ -130,9 +170,12 @@ fun HomeScreen(resumeTick: Int, homeTick: Int) {
         }
     }
 
-    // A launcher must never close on Back: close the drawer, else go to page 1, else do nothing.
+    // A launcher must never close on Back: close the folder, then the drawer,
+    // then go back to page 1, otherwise do nothing.
     BackHandler(enabled = true) {
-        if (drawerProgress > 0f) {
+        if (folderOpen) {
+            folderOpen = false
+        } else if (drawerProgress > 0f) {
             settleDrawer(0f)
         } else if (pagerState.currentPage > 0) {
             scope.launch { pagerState.animateScrollToPage(0) }
@@ -144,6 +187,14 @@ fun HomeScreen(resumeTick: Int, homeTick: Int) {
         AppRepository.launch(context, app)
         jobHolder.job?.cancel()
         drawerProgress = 0f
+    }
+    val launchFromFolder: (AppInfo) -> Unit = { app ->
+        AppRepository.launch(context, app)
+        folderOpen = false
+    }
+    val openFolder: (HomeItem.Folder) -> Unit = { folder ->
+        folderShown = folder
+        folderOpen = true
     }
 
     val draggableState = rememberDraggableState { dy -> dragDrawer(dy) }
@@ -180,16 +231,19 @@ fun HomeScreen(resumeTick: Int, homeTick: Int) {
                     .weight(1f)
                     .fillMaxWidth()
             ) { page ->
-                val items = remember(pageApps, page) {
-                    pageApps.drop(page * perPage).take(perPage)
-                }
-                HomePage(items = items, onLaunch = launchApp)
+                HomePage(
+                    pageIndex = page,
+                    items = pages.getOrElse(page) { emptyList() },
+                    refreshKey = resumeTick,
+                    onLaunch = launchApp,
+                    onOpenFolder = openFolder
+                )
             }
 
             Dock(apps = dock, onLaunch = launchApp)
 
             PageDots(
-                count = pageCount,
+                count = pages.size,
                 current = pagerState.currentPage,
                 modifier = Modifier
                     .align(Alignment.CenterHorizontally)
@@ -206,36 +260,104 @@ fun HomeScreen(resumeTick: Int, homeTick: Int) {
                 onRelease = { velocityY -> releaseDrawer(velocityY) }
             )
         }
+
+        AnimatedVisibility(
+            visible = folderOpen,
+            enter = fadeIn(tween(180)) + scaleIn(initialScale = 0.9f, animationSpec = tween(220)),
+            exit = fadeOut(tween(150)) + scaleOut(targetScale = 0.9f, animationSpec = tween(150))
+        ) {
+            folderShown?.let { folder ->
+                FolderPopup(
+                    folder = folder,
+                    onLaunch = launchFromFolder,
+                    onDismiss = { folderOpen = false }
+                )
+            }
+        }
     }
 }
 
-/** One page: a fixed grid of COLUMNS x ROWS cells. */
+/**
+ * One page: optional widgets at the top, then a fixed grid of apps and folders.
+ * Every grid row has the same height on every page, so icons line up from page to page.
+ */
 @Composable
-private fun HomePage(items: List<AppInfo>, onLaunch: (AppInfo) -> Unit) {
-    Column(
+private fun HomePage(
+    pageIndex: Int,
+    items: List<HomeItem>,
+    refreshKey: Int,
+    onLaunch: (AppInfo) -> Unit,
+    onOpenFolder: (HomeItem.Folder) -> Unit
+) {
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = 12.dp, vertical = 8.dp)
     ) {
-        for (row in 0 until ROWS) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-            ) {
-                for (col in 0 until COLUMNS) {
-                    val app = items.getOrNull(row * COLUMNS + col)
-                    Box(
+        val rowHeight = maxHeight / ROWS
+        val gridRows = ROWS - widgetRowsFor(pageIndex)
+
+        Column(modifier = Modifier.fillMaxSize()) {
+            if (pageIndex == 0) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(rowHeight),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    WeatherWidget(
+                        refreshKey = refreshKey,
+                        modifier = Modifier.weight(0.9f)
+                    )
+                    GoogleSearchWidget(modifier = Modifier.weight(1.1f))
+                }
+            } else if (pageIndex == 1) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(rowHeight * 2)
+                        .padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    ClockWidget(
                         modifier = Modifier
                             .weight(1f)
-                            .fillMaxHeight(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (app != null) {
-                            AppIconItem(
-                                app = app,
-                                onClick = { onLaunch(app) }
-                            )
+                            .fillMaxHeight()
+                    )
+                    CalendarWidget(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                    )
+                }
+            }
+
+            for (row in 0 until gridRows) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(rowHeight)
+                ) {
+                    for (col in 0 until COLUMNS) {
+                        val item = items.getOrNull(row * COLUMNS + col)
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            when (item) {
+                                is HomeItem.App -> AppIconItem(
+                                    app = item.app,
+                                    onClick = { onLaunch(item.app) }
+                                )
+                                is HomeItem.Folder -> FolderIconItem(
+                                    folder = item,
+                                    onClick = { onOpenFolder(item) }
+                                )
+                                null -> Unit
+                            }
                         }
                     }
                 }
