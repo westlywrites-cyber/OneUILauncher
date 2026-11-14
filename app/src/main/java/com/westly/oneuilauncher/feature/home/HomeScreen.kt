@@ -39,6 +39,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -72,15 +73,19 @@ import com.westly.oneuilauncher.data.AppInfo
 import com.westly.oneuilauncher.data.AppRepository
 import com.westly.oneuilauncher.data.HomeItem
 import com.westly.oneuilauncher.data.HomeItems
+import com.westly.oneuilauncher.data.LauncherSettings
 import com.westly.oneuilauncher.data.LayoutStore
+import com.westly.oneuilauncher.data.SettingsStore
 import com.westly.oneuilauncher.data.WallpaperStore
 import com.westly.oneuilauncher.feature.drawer.AppDrawer
+import com.westly.oneuilauncher.feature.settings.SettingsScreen
 import com.westly.oneuilauncher.feature.wallpaper.LauncherWallpaper
 import com.westly.oneuilauncher.feature.wallpaper.WallpaperPicker
 import com.westly.oneuilauncher.feature.widgets.CalendarWidget
 import com.westly.oneuilauncher.feature.widgets.ClockWidget
 import com.westly.oneuilauncher.feature.widgets.GoogleSearchWidget
 import com.westly.oneuilauncher.feature.widgets.WeatherWidget
+import com.westly.oneuilauncher.overlay.OverlayController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -109,7 +114,7 @@ private fun widgetRowsFor(page: Int): Int = when (page) {
     else -> 0
 }
 
-private fun capacityFor(page: Int): Int = COLUMNS * (ROWS - widgetRowsFor(page))
+private fun capacityFor(page: Int, columns: Int): Int = columns * (ROWS - widgetRowsFor(page))
 
 /** Keeps the running drawer animation so it can be cancelled when a finger touches the screen. */
 private class JobHolder {
@@ -129,14 +134,15 @@ private sealed interface MenuState {
 private class GridGeometry(
     private val width: Float,
     private val height: Float,
-    density: Float
+    density: Float,
+    private val columns: Int
 ) {
     private val padX = PAGE_PAD_H * density
     private val padY = PAGE_PAD_V * density
     private val contentW = width - 2f * padX
     private val contentH = height - 2f * padY
     private val rowH = contentH / ROWS
-    private val colW = contentW / COLUMNS
+    private val colW = contentW / columns
 
     fun cellAt(x: Float, y: Float, page: Int): Int? {
         if (contentW <= 0f || contentH <= 0f) return null
@@ -146,12 +152,12 @@ private class GridGeometry(
         val row = (gy / rowH).toInt()
         val col = (gx / colW).toInt()
         if (row >= ROWS - widgetRowsFor(page)) return null
-        return row * COLUMNS + col
+        return row * columns + col
     }
 
     fun cellRect(page: Int, cell: Int): Rect {
-        val row = cell / COLUMNS
-        val col = cell % COLUMNS
+        val row = cell / columns
+        val col = cell % columns
         val left = padX + col * colW
         val top = padY + (widgetRowsFor(page) + row) * rowH
         return Rect(left, top, left + colW, top + rowH)
@@ -218,6 +224,27 @@ fun HomeScreen(resumeTick: Int, homeTick: Int) {
 
     val dock = remember(apps) { AppRepository.resolveDock(context, apps) }
 
+    // ---- Launcher settings (Phase 5) ----
+    var settings by remember { mutableStateOf(SettingsStore.load(context)) }
+    val columns = settings.columns
+    var settingsOpen by remember { mutableStateOf(false) }
+    var overlayGranted by remember { mutableStateOf(OverlayController.canDraw(context)) }
+    LaunchedEffect(resumeTick) { overlayGranted = OverlayController.canDraw(context) }
+
+    fun updateSettings(new: LauncherSettings) {
+        settings = new
+        SettingsStore.save(context, new)
+    }
+
+    // ---- Status bar overlay (Phase 6): on only when wanted AND allowed ----
+    LaunchedEffect(settings.statusBarOverlay, overlayGranted, resumeTick) {
+        if (settings.statusBarOverlay && overlayGranted) {
+            OverlayController.start(context)
+        } else {
+            OverlayController.stop(context)
+        }
+    }
+
     // The order the user saved by dragging (empty = default order).
     var savedOrder by remember { mutableStateOf(LayoutStore.loadOrder(context)) }
     val baseItems = remember(apps, dock, savedOrder) {
@@ -230,11 +257,11 @@ fun HomeScreen(resumeTick: Int, homeTick: Int) {
     var liveItems by remember(baseItems) { mutableStateOf(baseItems) }
 
     // Split the items over pages. Pages with widgets hold fewer rows of apps.
-    val pages = remember(liveItems) {
+    val pages = remember(liveItems, columns) {
         val result = mutableListOf<List<HomeItem>>()
         var index = 0
         while (index < liveItems.size || result.size < MIN_PAGES) {
-            val capacity = capacityFor(result.size)
+            val capacity = capacityFor(result.size, columns)
             result.add(liveItems.drop(index).take(capacity))
             index += capacity
         }
@@ -324,6 +351,7 @@ fun HomeScreen(resumeTick: Int, homeTick: Int) {
         return when {
             menu != null -> { menu = null; true }
             pickerOpen -> { pickerOpen = false; true }
+            settingsOpen -> { settingsOpen = false; true }
             folderOpen -> { folderOpen = false; true }
             drawerProgress > 0f -> { settleDrawer(0f); true }
             else -> false
@@ -362,7 +390,8 @@ fun HomeScreen(resumeTick: Int, homeTick: Int) {
     fun geometry() = GridGeometry(
         gridSize.width.toFloat(),
         gridSize.height.toFloat(),
-        density.density
+        density.density,
+        columns
     )
 
     /** While dragging: move the dragged item to the cell under the finger. */
@@ -371,7 +400,7 @@ fun HomeScreen(resumeTick: Int, homeTick: Int) {
         val page = pagerState.currentPage
         val cell = geometry().cellAt(pos.x, pos.y, page) ?: return
         var start = 0
-        for (p in 0 until page) start += capacityFor(p)
+        for (p in 0 until page) start += capacityFor(p, columns)
         val list = liveItems
         val from = list.indexOfFirst { it.id == id }
         if (from < 0) return
@@ -462,6 +491,11 @@ fun HomeScreen(resumeTick: Int, homeTick: Int) {
 
     val draggableState = rememberDraggableState { dy -> dragDrawer(dy) }
 
+    CompositionLocalProvider(
+        LocalIconSize provides iconSizeFor(settings.iconSize),
+        LocalShowLabels provides settings.showLabels,
+        LocalGridColumns provides settings.columns
+    ) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -512,7 +546,8 @@ fun HomeScreen(resumeTick: Int, homeTick: Int) {
                         pageIndex = page,
                         items = pages.getOrElse(page) { emptyList() },
                         hiddenId = dragId,
-                        refreshKey = resumeTick
+                        refreshKey = resumeTick,
+                        columns = columns
                     )
                 }
             }
@@ -585,6 +620,30 @@ fun HomeScreen(resumeTick: Int, homeTick: Int) {
             }
         }
 
+        // Launcher settings (Phase 5).
+        AnimatedVisibility(
+            visible = settingsOpen,
+            enter = fadeIn(tween(180)) + slideInVertically(tween(260)) { it / 8 },
+            exit = fadeOut(tween(160)) + slideOutVertically(tween(200)) { it / 8 }
+        ) {
+            SettingsScreen(
+                settings = settings,
+                overlayPermissionGranted = overlayGranted,
+                onChange = { updateSettings(it) },
+                onToggleOverlay = { on ->
+                    updateSettings(settings.copy(statusBarOverlay = on))
+                    if (on && !overlayGranted) OverlayController.openPermissionScreen(context)
+                },
+                onGrantOverlayPermission = { OverlayController.openPermissionScreen(context) },
+                onOpenWallpaper = { pickerOpen = true },
+                onResetLayout = {
+                    LayoutStore.clear(context)
+                    savedOrder = emptyList()
+                },
+                onClose = { settingsOpen = false }
+            )
+        }
+
         // Wallpaper sheet.
         AnimatedVisibility(
             visible = pickerOpen,
@@ -620,6 +679,7 @@ fun HomeScreen(resumeTick: Int, homeTick: Int) {
                 anchor = state.anchor,
                 entries = listOf(
                     MenuEntry("Wallpaper") { pickerOpen = true },
+                    MenuEntry("Launcher settings") { settingsOpen = true },
                     MenuEntry("Reset home layout") {
                         LayoutStore.clear(context)
                         savedOrder = emptyList()
@@ -629,6 +689,7 @@ fun HomeScreen(resumeTick: Int, homeTick: Int) {
             )
             null -> Unit
         }
+    }
     }
 }
 
@@ -642,7 +703,8 @@ private fun HomePage(
     pageIndex: Int,
     items: List<HomeItem>,
     hiddenId: String?,
-    refreshKey: Int
+    refreshKey: Int,
+    columns: Int
 ) {
     BoxWithConstraints(
         modifier = Modifier
@@ -694,8 +756,8 @@ private fun HomePage(
                         .fillMaxWidth()
                         .height(rowHeight)
                 ) {
-                    for (col in 0 until COLUMNS) {
-                        val item = items.getOrNull(row * COLUMNS + col)
+                    for (col in 0 until columns) {
+                        val item = items.getOrNull(row * columns + col)
                         Box(
                             modifier = Modifier
                                 .weight(1f)

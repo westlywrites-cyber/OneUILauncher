@@ -53,8 +53,6 @@ import com.westly.oneuilauncher.data.AppInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-private val IconSize = 56.dp
-
 /** Midnight blue wallpaper drawn in code, matching the HTML preview. */
 @Composable
 fun HomeWallpaper(modifier: Modifier = Modifier) {
@@ -132,7 +130,9 @@ fun AppIconItem(
     var bounds by remember { mutableStateOf(Rect.Zero) }
     val context = LocalContext.current
     val density = LocalDensity.current
-    val sizePx = with(density) { IconSize.roundToPx() }
+    val iconSize = LocalIconSize.current
+    val labelsOn = LocalShowLabels.current
+    val sizePx = with(density) { iconSize.roundToPx() }
 
     val bitmap by produceState<ImageBitmap?>(initialValue = null, key1 = app.key) {
         value = withContext(Dispatchers.IO) {
@@ -177,18 +177,18 @@ fun AppIconItem(
     ) {
         Box(
             modifier = Modifier
-                .size(IconSize)
-                .clip(RoundedCornerShape(IconSize * 0.31f))
+                .size(iconSize)
+                .clip(RoundedCornerShape(iconSize * 0.31f))
         ) {
             bitmap?.let {
                 Image(
                     bitmap = it,
                     contentDescription = app.label,
-                    modifier = Modifier.size(IconSize)
+                    modifier = Modifier.size(iconSize)
                 )
             }
         }
-        if (showLabel) {
+        if (showLabel && labelsOn) {
             Text(
                 text = app.label,
                 modifier = Modifier

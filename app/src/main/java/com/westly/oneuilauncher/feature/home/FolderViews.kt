@@ -52,8 +52,6 @@ import com.westly.oneuilauncher.data.HomeItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-private val FolderTileSize = 56.dp
-
 /** A small rounded app icon with no name, used inside the folder tile. */
 @Composable
 private fun MiniAppIcon(app: AppInfo, size: Dp) {
@@ -100,6 +98,10 @@ fun FolderIconItem(
         label = "folderPressScale"
     )
     val minis = folder.apps.take(9)
+    val tileSize = LocalIconSize.current
+    val labelsOn = LocalShowLabels.current
+    val miniSize = tileSize * (13f / 56f)
+    val tilePadding = tileSize * (6f / 56f)
 
     Column(
         modifier = modifier
@@ -122,10 +124,10 @@ fun FolderIconItem(
     ) {
         Column(
             modifier = Modifier
-                .size(FolderTileSize)
-                .clip(RoundedCornerShape(FolderTileSize * 0.31f))
+                .size(tileSize)
+                .clip(RoundedCornerShape(tileSize * 0.31f))
                 .background(Color.White.copy(alpha = 0.26f))
-                .padding(6.dp),
+                .padding(tilePadding),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
             for (row in 0 until 3) {
@@ -134,34 +136,36 @@ fun FolderIconItem(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     for (col in 0 until 3) {
-                        Box(modifier = Modifier.size(13.dp)) {
+                        Box(modifier = Modifier.size(miniSize)) {
                             val app = minis.getOrNull(row * 3 + col)
                             if (app != null) {
-                                MiniAppIcon(app = app, size = 13.dp)
+                                MiniAppIcon(app = app, size = miniSize)
                             }
                         }
                     }
                 }
             }
         }
-        Text(
-            text = folder.name,
-            modifier = Modifier
-                .padding(top = 6.dp)
-                .fillMaxWidth(),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            textAlign = TextAlign.Center,
-            style = TextStyle(
-                color = Color.White,
-                fontSize = 12.sp,
-                shadow = Shadow(
-                    color = Color.Black.copy(alpha = 0.5f),
-                    offset = Offset(0f, 1f),
-                    blurRadius = 6f
+        if (labelsOn) {
+            Text(
+                text = folder.name,
+                modifier = Modifier
+                    .padding(top = 6.dp)
+                    .fillMaxWidth(),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                style = TextStyle(
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    shadow = Shadow(
+                        color = Color.Black.copy(alpha = 0.5f),
+                        offset = Offset(0f, 1f),
+                        blurRadius = 6f
+                    )
                 )
             )
-        )
+        }
     }
 }
 

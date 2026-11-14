@@ -59,7 +59,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.westly.oneuilauncher.data.AppInfo
 import com.westly.oneuilauncher.feature.home.AppIconItem
-import com.westly.oneuilauncher.feature.home.COLUMNS
+import com.westly.oneuilauncher.feature.home.LocalGridColumns
 
 /**
  * Phase 2 app drawer: search bar plus an A to Z grid of every app.
@@ -171,7 +171,7 @@ fun AppDrawer(
                 }
             } else {
                 LazyVerticalGrid(
-                    columns = GridCells.Fixed(COLUMNS),
+                    columns = GridCells.Fixed(LocalGridColumns.current),
                     state = gridState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(
