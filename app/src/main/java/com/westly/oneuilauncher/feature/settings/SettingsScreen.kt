@@ -51,6 +51,7 @@ fun SettingsScreen(
     onToggleOverlay: (Boolean) -> Unit,
     onGrantOverlayPermission: () -> Unit,
     onOpenWallpaper: () -> Unit,
+    onOpenQuickSettings: () -> Unit,
     onResetLayout: () -> Unit,
     onClose: () -> Unit
 ) {
@@ -169,6 +170,17 @@ fun SettingsScreen(
                             onClick = onGrantOverlayPermission
                         )
                     }
+                }
+
+                SectionTitle("Quick Settings")
+                SettingsCard {
+                    ActionRow(
+                        title = "Open Quick Settings panel",
+                        subtitle = "With the status bar overlay on, swipe down on the right half " +
+                            "of the status bar to open it from any app. The left half still " +
+                            "opens Android's notifications.",
+                        onClick = onOpenQuickSettings
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(32.dp))

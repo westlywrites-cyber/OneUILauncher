@@ -1,5 +1,6 @@
 package com.westly.oneuilauncher.feature.home
 
+import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -86,6 +87,7 @@ import com.westly.oneuilauncher.feature.widgets.ClockWidget
 import com.westly.oneuilauncher.feature.widgets.GoogleSearchWidget
 import com.westly.oneuilauncher.feature.widgets.WeatherWidget
 import com.westly.oneuilauncher.overlay.OverlayController
+import com.westly.oneuilauncher.qs.QuickSettingsActivity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -636,6 +638,9 @@ fun HomeScreen(resumeTick: Int, homeTick: Int) {
                 },
                 onGrantOverlayPermission = { OverlayController.openPermissionScreen(context) },
                 onOpenWallpaper = { pickerOpen = true },
+                onOpenQuickSettings = {
+                    context.startActivity(Intent(context, QuickSettingsActivity::class.java))
+                },
                 onResetLayout = {
                     LayoutStore.clear(context)
                     savedOrder = emptyList()

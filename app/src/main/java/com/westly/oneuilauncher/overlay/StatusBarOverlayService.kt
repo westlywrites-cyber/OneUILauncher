@@ -19,8 +19,12 @@ import android.os.IBinder
 import android.provider.Settings
 import android.text.format.DateFormat
 import android.view.Gravity
+import android.view.MotionEvent
+import android.view.View
+import android.view.ViewConfiguration
 import android.view.WindowManager
 import androidx.core.content.ContextCompat
+import com.westly.oneuilauncher.qs.QuickSettingsActivity
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -33,6 +37,7 @@ class StatusBarOverlayService : Service() {
 
     private var windowManager: WindowManager? = null
     private var barView: StatusBarView? = null
+    private var touchZone: View? = null
     private var connectivity: ConnectivityManager? = null
 
     private val tickReceiver = object : BroadcastReceiver() {
@@ -133,6 +138,8 @@ class StatusBarOverlayService : Service() {
         windowManager = manager
         barView = view
 
+        addTouchZone(manager)
+
         // Time changes.
         val timeFilter = IntentFilter().apply {
             addAction(Intent.ACTION_TIME_TICK)
@@ -170,6 +177,76 @@ class StatusBarOverlayService : Service() {
             try { windowManager?.removeView(view) } catch (_: Exception) { }
         }
         barView = null
+        touchZone?.let { zone ->
+            try { windowManager?.removeView(zone) } catch (_: Exception) { }
+        }
+        touchZone = null
+    }
+
+    /**
+     * An invisible window over the right half of the bar. Swiping down on it opens the
+     * Quick Settings panel. The left half is left alone, so Android's own notification
+     * shade still opens from there.
+     */
+    private fun addTouchZone(manager: WindowManager) {
+        val zone = View(this)
+        val slop = ViewConfiguration.get(this).scaledTouchSlop * 1.5f
+
+        zone.setOnTouchListener(object : View.OnTouchListener {
+            private var startY = 0f
+            private var opened = false
+
+            override fun onTouch(v: View, event: MotionEvent): Boolean {
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        startY = event.rawY
+                        opened = false
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        if (!opened && event.rawY - startY > slop) {
+                            opened = true
+                            openQuickSettings()
+                        }
+                    }
+                }
+                return true
+            }
+        })
+
+        val params = WindowManager.LayoutParams(
+            resources.displayMetrics.widthPixels / 2,
+            statusBarHeight(),
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.END
+            if (Build.VERSION.SDK_INT >= 28) {
+                layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+        }
+
+        try {
+            manager.addView(zone, params)
+            touchZone = zone
+        } catch (_: Exception) {
+            // Without the touch zone the bar still works; only the swipe is missing.
+        }
+    }
+
+    private fun openQuickSettings() {
+        try {
+            startActivity(
+                Intent(this, QuickSettingsActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        } catch (_: Exception) {
+            // Android refused to open the panel from the background.
+        }
     }
 
     private fun applyBattery(intent: Intent) {
