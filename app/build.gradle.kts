@@ -4,6 +4,11 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+// Release signing and versioning come from GitHub Actions (see .github/workflows/build.yml).
+// When these are not set (for example a local build), the release APK is simply left unsigned.
+val keystorePath: String? = System.getenv("KEYSTORE_PATH")
+val buildNumber: Int = System.getenv("BUILD_NUMBER")?.toIntOrNull() ?: 1
+
 android {
     namespace = "com.westly.oneuilauncher"
     compileSdk = 35
@@ -12,13 +17,25 @@ android {
         applicationId = "com.westly.oneuilauncher"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = buildNumber
+        versionName = "1.1.$buildNumber"
+    }
+
+    signingConfigs {
+        if (keystorePath != null) {
+            create("release") {
+                storeFile = file(keystorePath)
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 
